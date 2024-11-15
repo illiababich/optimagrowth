@@ -1,0 +1,61 @@
+version: '3.7'
+name: optimagrowth
+
+services:
+  database:
+    image: postgres:16.0
+    env_file: ./.env
+    environment:
+      - POSTGRES_USER=$POSTGRESDB_USER
+      - POSTGRES_PASSWORD=$POSTGRESDB_ROOT_PASSWORD
+      - POSTGRES_DB=$POSTGRESDB_DATABASE
+    ports:
+      - $POSTGRESDB_LOCAL_PORT:$POSTGRESDB_DOCKER_PORT
+    volumes:
+        - ./init.sql:/docker-entrypoint-initdb.d/1-init.sql
+        - ./data.sql:/docker-entrypoint-initdb.d/2-data.sql
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  configserver:
+    image: ostock/configserver:0.0.1-SNAPSHOT
+    ports:
+       - $CONFIGSERVER_SPRING_LOCAL_PORT:$CONFIGSERVER_SPRING_DOCKER_PORT
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:$CONFIGSERVER_SPRING_DOCKER_PORT/actuator/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # environment:
+      # ENCRYPT_KEY: "fje83Ki8403Iod87dne7Yjsl3THueh48jfuO9j4U2hf64Lo"
+      # - "SPRING_PROFILES_ACTIVE=dev"
+    networks:
+      - backend
+
+  licensingservice:
+    image: ostock/licensing-service:0.0.1-SNAPSHOT
+    ports:
+      - "$LICENSINGSERVICE_SPRING_LOCAL_PORT:$LICENSINGSERVICE_SPRING_DOCKER_PORT"
+    environment:
+      - "SPRING_PROFILES_ACTIVE=docker"
+      - "CONFIGSERVER_URI=http://configserver:$CONFIGSERVER_SPRING_DOCKER_PORT"
+      - "CONFIGSERVER_PORT=$CONFIGSERVER_SPRING_DOCKER_PORT"
+      - "DATABASE_URL=jdbc:postgresql://database:$POSTGRESDB_DOCKER_PORT/$POSTGRESDB_DATABASE"
+      - "DATABASESERVER_PORT=$POSTGRESDB_DOCKER_PORT"
+      # - "ENCRYPT_KEY=IMSYMMETRIC"
+    depends_on:
+      database:
+        condition: service_healthy
+      configserver:
+        condition: service_started
+    networks:
+      - backend
+
+networks:
+  backend:
+    driver: bridge
